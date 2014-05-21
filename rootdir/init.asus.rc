@@ -1,0 +1,178 @@
+on init
+    export PATH /sbin:/vendor/bin:/system/sbin:/system/bin:/system/xbin
+
+# mount mmc userdata and gmxt partitions
+
+on post-fs
+#+++ TsungChing_Lin: for factory reset with rm
+    asus_exec /system/bin/asusrmdir.sh
+#--- TsungChing_Lin: for factory reset with rm
+
+on fs
+service check-datalog /system/bin/sh /system/etc/init.asus.checkdatalog.sh
+    class late_start
+    oneshot
+
+on property:persist.asus.startlog=1
+    start check-datalog
+    start console
+    write /sys/module/msm_rtb/parameters/enable 1
+on property:persist.asus.startlog=0
+    start check-datalog
+    stop  console
+    write /sys/module/msm_rtb/parameters/enable 0
+
+service saveramdump /system/etc/saveramdump.sh
+    class late_start
+    oneshot
+    disabled
+    
+#log_main log_system
+service logcat /system/bin/logcat -k -r 10000 -n 20 -v threadtime -f /data/logcat_log/logcat.txt
+	class late_start
+	disabled
+#log_radio
+service logcat-radio /system/bin/logcat -r 10000 -b radio -n 20 -v time -f /data/logcat_log/logcat-radio.txt
+	class late_start
+	disabled
+#log_events
+service logcat-events /system/bin/logcat -r 10000 -b events -n 20 -v threadtime -f /data/logcat_log/logcat-events.txt
+	class late_start
+	disabled
+
+# ASUS_BSP+++ Wenli "Porting from A68 1030"
+# tcpdump_warp service to save tcpdump to /sdcard
+service tcpdump-warp /system/xbin/tcpdump.sh
+    class late_start
+    user root
+    group root
+    disabled
+
+# ASUS_BSP+++ ChanceChen "add save-hcidump service"
+service save-hcidump /system/bin/sh /system/etc/init.asus.hcidump.sh
+    class late_start
+    user root
+    group root
+    disabled
+    oneshot
+# ASUS_BSP--- ChanceChen "add save-hcidump service"
+
+# config subsystem restart
+on property:persist.sys.modem.restart=*
+    stop restart_cfg2
+    start restart_cfg2
+
+service restart_cfg2 /system/xbin/restart_cfg.sh
+    class late_start
+    user root
+    group root
+    disabled
+    oneshot
+
+on property:ril.restart.step=*
+    start modem_restart
+
+service modem_restart /system/xbin/modem_restart.sh
+    class late_start
+    user root
+    group root
+    disabled
+    oneshot
+
+# ASUS_BSP--- Wenli "Porting from A68 1030"
+#ASUS_BSP +++ Yujoe "[A60K][Diag][N/A][Improve]Improve the process of saving QXDM log to SD card."
+service diag_mdlog /system/bin/diag_mdlog
+    class late_start
+    disabled
+
+on property:persist.asus.qxdmlog.enable=1
+    start diag_mdlog  
+
+on property:persist.asus.qxdmlog.enable=0
+    stop diag_mdlog
+    write /sys/power/wake_unlock diag_fwrite
+
+on property:debug.asus.qxdmlog.enable=1
+    start diag_mdlog  
+
+on property:debug.asus.qxdmlog.enable=0
+    stop diag_mdlog
+    write /sys/power/wake_unlock diag_fwrite
+#ASUS_BSP --- Yujoe "[A60K][Diag][N/A][Improve]Improve the process of saving QXDM log to SD card."
+
+#ASUS_BSP +++ Allen1_Huang
+service asusevtlog /system/bin/sh /system/etc/init.asus.evtlog.sh
+    class late_start
+    oneshot
+    disabled
+
+on property:sys.asus.evtlog=1
+    start asusevtlog
+on property:sys.asus.evtlog=0
+    start asusevtlog
+#ASUS_BSP --- Allen1_Huang
+
+on post-fs-data
+# mount asusdata
+    mkdir /data/asusdata 0660 root shell
+    wait /dev/block/platform/msm_sdcc.1/by-name/asusdata
+    exec /system/bin/e2fsck -p /dev/block/platform/msm_sdcc.1/by-name/asusdata
+    mount ext4 /dev/block/platform/msm_sdcc.1/by-name/asusdata /data/asusdata ro nosuid nodev barrier=1 noauto_da_alloc
+    chmod 0775 /data/asusdata
+    chown root shell /data/asusdata
+
+# mount tombstone
+    mkdir /data/media/asus_log
+    wait /dev/block/platform/msm_sdcc.1/by-name/tombstones
+    exec /system/bin/e2fsck -p /dev/block/platform/msm_sdcc.1/by-name/tombstone
+    mount ext4 /dev/block/platform/msm_sdcc.1/by-name/tombstones /data/media/asus_log rw nosuid nodev barrier=1 noauto_da_alloc
+    chmod 0755 /data/media/asus_log
+    chown sdcard_rw sdcard_rw /data/media/asus_log
+
+# mount gmxt
+    mkdir /data/gmxt 0775 media_rw media_rw
+    wait /dev/block/platform/msm_sdcc.1/by-name/gmxt
+    exec /system/bin/e2fsck -p /dev/block/platform/msm_sdcc.1/by-name/gmxt
+    mount ext4 /dev/block/platform/msm_sdcc.1/by-name/gmxt /data/gmxt nosuid nodev barrier=1 noauto_da_alloc
+
+    chmod 0775 /data/gmxt
+    chown media_rw media_rw /data/gmxt
+
+    mkdir /data/log
+    mkdir /data/anr
+    mkdir /data/tombstones
+
+    chown system system /data/log
+    chown system system /data/anr
+    chown system system /data/tombstones
+   
+    chmod 0775 /data/log
+    chmod 0775 /data/anr
+    chmod 0775 /data/tombstones
+
+#ASUS_BSP simpson: add for auto-ICON-LED +++
+    chown system system /data/.tmp/A68_TP_ID
+#ASUS_BSP simpson: add for auto-ICON-LED ---
+#ASUS_BSP +++ Jason Chang "directory for compass calibration data"
+    mkdir /data/amit 0775 system system
+#ASUS_BSP --- Jason Chang "directory for compass calibration data"
+
+service asusdebug /system/bin/sh /system/etc/prepare_asusdebug.sh
+    class late_start
+    oneshot
+    disabled
+on property:persist.asus.debug=1
+	export PATH /sbin:/vendor/bin:/system/sbin:/system/bin:/system/xbin:/data/debug
+	start asusdebug
+	
+on property:persist.asus.debug=0
+	export PATH /sbin:/vendor/bin:/system/sbin:/system/bin:/system/xbin
+	
+
+#ASUS_BSP+++ jacob kung "[A68][USB][NA][NA] setup qpst download mode properity"
+on property:persist.sys.downloadmode.enable=1
+write /sys/module/restart/parameters/download_mode 1
+
+on property:persist.sys.downloadmode.enable=0
+write /sys/module/restart/parameters/download_mode 0
+#ASUS_BSP--- jacob kung "[A68][USB][NA][NA] setup qpst download mode properity"
